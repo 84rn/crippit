@@ -105,6 +105,7 @@ int parse_options(int argc, char *argv[])
 	char c;
 
 	strcpy(s_options.save_path, DEF_SAVE_PATH);
+	s_options.page_start = 1;
 
 	while (--argc && (*++argv)[0] == '-')
 	{

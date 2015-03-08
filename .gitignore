@@ -3,3 +3,5 @@ Release/
 *.exe
 *.sdf
 *.suo
+*.opensdf
+

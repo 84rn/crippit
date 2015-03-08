@@ -14,8 +14,14 @@ static struct s_response_buffer
 	long len;
 } response_buffer;
 
-static p_response_buffer presp_buf = &response_buffer;
+static struct s_savefile
+{
+	FILE *file;
+	long long int bytes_written;
+} save_file;
 
+static p_response_buffer presp_buf = &response_buffer;
+static long long int file_bytes;
 static CURL *req_handle;
 
 
@@ -61,32 +67,36 @@ size_t response_to_string(char *ptr, size_t size, size_t nmemb, p_response_buffe
 	return size * nmemb;
 }
 
-void init_curl()
+int init_curl()
 {
 	CURLcode ret;
 
 	if (ret = curl_global_init(CURL_GLOBAL_ALL))
 	{
-		fprintf(stderr, "Error: cURL global init failed\n");
-		exit(EXIT_FAILURE);
+		log_curl_error(ret);
+		return 1;
 	}
 
 	req_handle = curl_easy_init();
 	if (!req_handle)
 	{
 		fprintf(stderr, "Error: cURL handle init failed\n");
-		exit(EXIT_FAILURE);
+		return 1;
 	}
 
 	curl_easy_setopt(req_handle, CURLOPT_FOLLOWLOCATION, 1L);
 	curl_easy_setopt(req_handle, CURLOPT_WRITEFUNCTION, response_to_string);
 	curl_easy_setopt(req_handle, CURLOPT_WRITEDATA, presp_buf);
 
+	return 0;
 }
 
 void update_req_url()
 {
-	curl_easy_setopt(req_handle, CURLOPT_URL, get_url());
+	CURLcode ret = curl_easy_setopt(req_handle, CURLOPT_URL, get_url());
+
+	if (ret)
+		log_curl_error(ret);
 }
 
 void cleanup_curl()
@@ -115,17 +125,21 @@ CURLcode start_request()
 	return ret;
 }
 
-size_t save_to_file(char *ptr, size_t size, size_t nmemb, FILE *file)
+size_t save_to_file(char *ptr, size_t size, size_t nmemb, struct s_savefile *save_file)
 {
-	return fwrite(ptr, size, nmemb, file);
+	int bytes = fwrite(ptr, size, nmemb, save_file->file);
+	save_file->bytes_written += bytes;
+	return bytes;
 }
 
 
-int download_stuff(json_data *json)
+int download_stuff(json_data *json, long long int *bytes)
 {
+	/* Find the file name*/
 	char *name = strrchr(json->url, '/');
 	name++;
 
+	/* Check if its downloadable */
 	int album = (strstr(json->url, "/a/") == NULL ? 0 : 1);
 	int https = (strstr(json->url, "https://") == NULL ? 0 : 1);
 	int gifv = (strstr(json->url, ".gifv") == NULL ? 0 : 1);
@@ -133,33 +147,66 @@ int download_stuff(json_data *json)
 
 	if (!album && !https && !gifv && ext)
 	{
+		/* Get rid of garbage chars*/
 		while (isalpha(*++ext));
 		*ext = '\0';
 		CURL *f_handle = curl_easy_init();
+
+		if (!f_handle)
+		{
+			fprintf(stderr, "Error: cannot initialize handle for file download\n");
+			return 1;
+		}
+
 		char path[1000] = { 0 };
 
 		strcat(path, get_opt_save_path());
 		strcat(path, "\\");
 		strcat(path, name);
-		FILE *file = fopen(path, "ab");
 
-		if (!file)
+		if (save_file.file)
 		{
-			fprintf(stderr, "FILE NULL\n");
+			fclose(save_file.file);
+			save_file.bytes_written = 0;
+		}
+			
+		save_file.file = fopen(path, "wb");
+
+		if (!save_file.file)
+		{
+			fprintf(stderr, "Cannot create file %s\n", path);
+			return 1;
 		}
 
 		curl_easy_setopt(f_handle, CURLOPT_URL, json->url);
 		curl_easy_setopt(f_handle, CURLOPT_WRITEFUNCTION, save_to_file);
-		curl_easy_setopt(f_handle, CURLOPT_WRITEDATA, file);
+		curl_easy_setopt(f_handle, CURLOPT_WRITEDATA, &save_file);
 
 		log_verbose("Downloading: %s\n", json->tag);
 		log_verbose("\tURL: %s\n", json->url);
-		log_verbose("\tTitle: %.60s\n\n", json->title);
+		log_verbose("\tTitle: %.60s\n", json->title);
 
-		curl_easy_perform(f_handle);
+		int ret = curl_easy_perform(f_handle);
+
+		if (ret)
+		{
+			log_curl_error(ret);
+			return 1;
+		}
+
+		log_verbose("\tSaved %llu.%llu kBytes\n\n", save_file.bytes_written / 1000, save_file.bytes_written % 1000);
+		if (bytes)
+			*bytes = save_file.bytes_written;
+		
 		curl_easy_cleanup(f_handle);
 
-		fclose(file);
+		if (save_file.bytes_written)
+		{
+			log_debug("Removing empty file: %s", path);
+			remove(path);
+		}
+
+		fclose(save_file.file);
 	}
 	else
 	{
@@ -170,7 +217,7 @@ int download_stuff(json_data *json)
 	return 0;
 }
 
-int parse_response(p_response_buffer rb, int(*parse_fun)(json_data *))
+int parse_response(p_response_buffer rb, int(*parse_fun)(json_data *, void *))
 {
 	char *div;
 	int tag_num = 0, downloaded = 0;
@@ -185,8 +232,12 @@ int parse_response(p_response_buffer rb, int(*parse_fun)(json_data *))
 		div = get_json_string_value(div, "url", &json.url);
 		div = get_json_string_value(div, "title", &json.title);
 
-		if (!parse_fun(&json))
+		long long bytes_written;
+		if (!parse_fun(&json, &bytes_written))
+		{
 			downloaded++;
+			file_bytes += bytes_written;
+		}
 
 		if (strlen(json.tag))
 			set_last_tag(json.tag);
@@ -201,7 +252,14 @@ int parse_response(p_response_buffer rb, int(*parse_fun)(json_data *))
 
 int download_files()
 {
-	start_request();
+	CURLcode ret = start_request();
+
+	if (ret)
+	{
+		log_curl_error(ret);
+		return 0;
+	}
+
 	return parse_response(presp_buf, download_stuff);
 }
 
@@ -221,7 +279,7 @@ int find_last_tag(p_response_buffer rb)
 		set_last_tag(json.tag);
 	}
 	else
-	{		
+	{
 		ret = 1;
 	}
 
@@ -232,7 +290,10 @@ int find_last_tag(p_response_buffer rb)
 
 int fast_forward_page()
 {
-	start_request();
+	CURLcode ret = start_request();
+
+	if (ret)
+		log_curl_error(ret);
 
 	if (find_last_tag(presp_buf) == 0)
 	{
@@ -244,4 +305,10 @@ int fast_forward_page()
 	{
 		return 1;
 	}
+}
+
+
+long long int get_file_bytes()
+{
+	return file_bytes;
 }

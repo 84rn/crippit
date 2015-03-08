@@ -78,7 +78,6 @@ int next_page()
 	return 0;
 }
 
-
 void set_last_tag(char *tag)
 {
 	strcpy(last_tag, tag);

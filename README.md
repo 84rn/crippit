@@ -12,6 +12,9 @@ Dependencies
 TODO:
 -------------
 
-* cURL error checking 
+* cURL error checking (being tested)
+* zlib support for downloading albums as .zip
 * wildcards for file names
+* .gifv support when Imgur releases some more info
+* SSL support
 * porting to Linux
