@@ -11,7 +11,7 @@ Dependencies
 
 TODO:
 -------------
-
+* check headers for Content: image
 * cURL error checking (being tested)
 * zlib support for downloading albums as .zip
 * wildcards for file names
