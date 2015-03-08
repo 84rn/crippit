@@ -42,6 +42,7 @@ enum time_window get_opt_window();
 char * get_opt_window_string();
 char * get_opt_save_path();
 int get_opt_verbose();
+int get_opt_follow_redirects();
 
 int parse_options(int argc, char *argv[]);
 

@@ -179,6 +179,8 @@ int download_stuff(json_data *json, long long int *bytes)
 		}
 
 		curl_easy_setopt(f_handle, CURLOPT_URL, json->url);
+		if (get_opt_follow_redirects())
+			curl_easy_setopt(f_handle, CURLOPT_FOLLOWLOCATION, 1);
 		curl_easy_setopt(f_handle, CURLOPT_WRITEFUNCTION, save_to_file);
 		curl_easy_setopt(f_handle, CURLOPT_WRITEDATA, &save_file);
 
@@ -200,13 +202,14 @@ int download_stuff(json_data *json, long long int *bytes)
 		
 		curl_easy_cleanup(f_handle);
 
-		if (save_file.bytes_written)
+		fclose(save_file.file);
+
+		if (!save_file.bytes_written)
 		{
 			log_debug("Removing empty file: %s", path);
 			remove(path);
+			return 1;
 		}
-
-		fclose(save_file.file);
 	}
 	else
 	{

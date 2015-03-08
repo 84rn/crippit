@@ -15,6 +15,7 @@ static struct options
 	enum time_window window;
 	char save_path[SAVE_PATH_LEN];
 	int verbose;
+	int follow_redirects;
 } s_options;
 
 void print_usage();
@@ -75,6 +76,10 @@ int set_opt_dir(char *s)
 	return 0;
 }
 
+int get_opt_follow_redirects()
+{
+	return s_options.follow_redirects;
+}
 int get_opt_page_start()
 {
 	return s_options.page_start;
@@ -181,6 +186,10 @@ int parse_options(int argc, char *argv[])
 			s_options.verbose = 1;
 			break;
 
+		case 'r':
+			s_options.follow_redirects = 1;
+			break;
+
 		
 		}
 	}
@@ -259,13 +268,14 @@ char * get_opt_save_path()
 
 void print_usage()
 {
-	printf("Usage: crippit [-v -h] [-p start] [-n num] [-d dir] [-s sort] [-t time] subreddit\n");
+	printf("Usage: crippit [-v -h -r] [-p start] [-n num] [-d dir] [-s sort] [-t time]subreddit\n");
 	printf("\t-p start\tstart from page no. <start> (defaults to 1)\n");
 	printf("\t-n num\t\tdownload <num> pages and exit\n");
 	printf("\t-d dir\t\tset save directory. If it doesn't exist it will \n\t\t\tbe created (defaults to program dir)\n");
 	printf("\t-s sort\t\tsort method, choose between hot/top/new \n\t\t\t(defaults to hot)\n");
 	printf("\t-t time\t\tsets the result time window,\n\t\t\tone of day/week/month/year/all (defaults to day)\n");
 	printf("\t-v\t\tverbose - print useful information\n");
+	printf("\t-r\t\t - follow redirects when downloading files\n");
 	printf("\t-h\t\thelp - print this text\n");
 	printf("\tsubreddit\tthe name of the subreddit which will be ripped from\n");
 }
